@@ -4,8 +4,9 @@ use std::{
     collections::HashSet,
     env,
     error::Error,
-    fmt::{self, Debug, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     iter::FromIterator,
+    io::stdin
 };
 
 
@@ -29,68 +30,8 @@ impl Term {
     }
 }
 
-// Util //////////////////////////////////////////////////////////////
-
-fn bitscount (w: usize) -> usize {
-  let mut c = ((w & 0xaaaa)>>1) + (w&0x5555);   
-  c = ((c & 0xcccc)>>2) + (c&0x3333);
-  c = ((c & 0xf0f0)>>4) + (c&0x0f0f);
-  ((c & 0xff00)>>8) + (c&0x00ff)
-}
-
-fn rndbit (mut word: usize) -> Option<usize> {
-  let mut hs = HashSet::new();
-  let mut bit = 0;
-  while 0 < word {
-    if 1 == (word & 1) { hs.insert(bit); }
-    bit += 1;
-    word = word>>1;
-  }
-  hs.iter().next().copied()
-}
-
-// Qstate ////////////////////////////////////////////////////////////
-
-/*
-  *  [ -]  *        [[ |]+[+-]]
-[+-]  [-] [+-]     *[[+|]+[ -]] = [|] + [ ] + [+] + [-]
-  *  [ -]  *
-
-     a[-]b[+-]      [  [+-]   ]               collapsing a superposes b
-[+-]  [-] [+-]     *[[+|]+[ -]] = [+] + [-]
-     [ -]
-____________________
-
-Collapse center
-Superpose orthogonals
-
-         +-|
-  +-|    +      +-|
-         +-|
-
-              
-   +     +-+ |
-   |     | +_+   
-
-collapsing a QS will
-   superpose itself with each of its orthogonal neighbors
-   collapse to a random value
-   superpose its neighbors with their orthogonal neighbors
-
-
-superpose
-  and self with orthogonal states' constraints
-
- 0 1 2 3  values
-   + - |  bits qs=15
-*/
-
-
-
 ////////////////////////////////////////
 
-//  D A C
-//    B
 
 #[derive(Debug)]
 struct State {
@@ -121,18 +62,23 @@ impl SuperState {
     fn from (states: &[usize]) -> SuperState {
         SuperState{states:HashSet::from_iter(states.iter().map(|i|*i))}
     }
-    fn project (&mut self, ss: &SuperState) {
-        let ss2 = HashSet::from_iter(self.states.intersection(&ss.states).map(|i|*i));
-        self.states.clear();
-        self.states = ss2;
+    fn project (&self, hss: &HashSet<usize>) -> HashSet<usize> {
+        HashSet::from_iter(self.states.intersection(hss).map(|i|*i))
     }
-    fn collapse (&mut self) {
+    fn count (&self) -> usize {
+        self.states.len()
+    }
+    fn states (&self) -> impl Iterator<Item=&usize> + '_ {
+        self.states.iter()
+    }
+    fn collapse (&mut self) -> usize {
         let i = *self.states.iter()
             .next().ok_or("superstate empty")
             .map_err(|e| println!("ERROR: {:?}", e))
             .unwrap();
         self.states.clear();
         self.states.insert(i);
+        i
     }
 }
 
@@ -144,214 +90,183 @@ impl Debug for SuperState {
 }
 ////////////////////////////////////////
 
-#[derive(Debug)]
-struct Qstate { // Qstate
-  values: Vec<char>,
-  rules:  Vec<Vec<usize>> // CONSTRAINTS value<direction<mask>>
+struct WaveFunction {
+  term: Term,
+  states: Vec<State>,
+  grid: Vec<Vec<SuperState>>, // Grid of states (state == one or more possible values)
+  groups: Vec<HashSet<(usize,usize)>> // Group values by wave count
 }
 
-impl Qstate {
-  fn new (values: &[char]) -> Qstate {
-    Qstate{
-      values: Vec::from(values),
-      rules:  values.iter()
-                .map( |_| vec![(1<<4)-1; values.len()] ) // all bits for each value set
-                .collect::<Vec<Vec<usize>>>()
+impl WaveFunction {
+    fn new (states: Vec<State>, ss: &[usize]) -> WaveFunction {
+        let mut groups: Vec<HashSet<(usize, usize)>> = (0..=4).into_iter().map(|_| HashSet::new()).collect();
+        let term = Term::new();
+        WaveFunction{
+            grid: (0..term.h).into_iter()
+                .map(|y| (0..term.w).into_iter()
+                    .map(|x| {
+                        groups[4].insert((y,x));
+                        SuperState::from(ss)
+                    }).collect())
+                .collect(),
+            term, states,
+            groups
+        }
     }
-  }
+    //fn projection(&self, id: usize, dir: usize) -> &SuperState {
+    //    &self.states[id].projections[dir]
+    //}
+    fn projectdir(&mut self, y: usize, x: usize, oy: usize, ox: usize, dir: usize) {
 
-  fn count (&self) -> usize { self.values.len() }
 
-  // Specify allowed values in each direction for specified value
-  // Represented internally as a bitfield.
-  fn mask (&mut self, value: usize, dirmasks: &[&[usize]]) {
-    self.rules[value].iter_mut()
-      .zip(dirmasks.iter())
-      .for_each( |(n, d)|
-          *n = d.iter()
-                .fold(0, |r,p| r+(1<<*p)));
-  }
-}
+        let sscount = self.grid[y][x].count(); // trying to project onto collapsed state
+        if sscount < 2 { return }
 
-// States ////////////////////////////////////////////////////////////
+        let mut projected_super_state = HashSet::new(); // Assemble projection sstate
+        let id = self.grid[oy][ox].states().for_each( |id|
+            self.states[*id].projections[dir].states.iter().for_each(|id| {
+                projected_super_state.insert(*id);
+            }));
 
-#[derive(Debug)]
-struct States {
-  w: usize,
-  h: usize,
-  field: Vec<usize>, // Grid of states (state == one or more possible values)
-  groups: Vec<HashSet<usize>> // Group values by wave count
-}
 
-impl States {
-  fn new (w: usize, h: usize, count: usize) -> States {
-    States{
-      w, h,
-      field:  vec![(1<<count)-1; w*h],
-      groups: (0..count)
-                .map( |i|
-                  if i==count-1 { (0..w*h).collect::<HashSet<usize>>() } 
-                  else { HashSet::new() } )
-                .collect()
+        let hashset2 = self.grid[y][x].project(&projected_super_state);
+        let ss = &mut self.grid[y][x];
+        ss.states.clear();
+        ss.states = hashset2;
+
+        let sscountfinal = ss.states.len();
+
+      //println!("{:?}", self);
+      //if 0 == sscountfinal{ println!("\x1b[31mERROR-IS-ZERO-{},{}",y,x); }
+      //let mut buff = String::new();
+      //println!("{:?}", stdin().read_line(&mut buff));
+
+
+        if sscount != sscountfinal {
+            let p = (y, x);
+            self.groups[sscount].remove(&p);
+            self.groups[sscountfinal].insert(p);
+            //if 1 == sscountfinal { self.projectState(y, x) }
+            if 0 != sscountfinal { self.projectState(y, x) }
+        }
     }
-  }
-  // pick random state with fewest uncollapsed values
-  fn smallestStateGroup (&mut self) -> Option<&mut HashSet<usize>> {
-    println!("lenghts {} {} {} {}",
-      self.groups[0].len(),
-      self.groups[1].len(),
-      self.groups[2].len(),
-      self.groups[3].len());
-    self.groups.iter_mut()
-      .skip(1) // Skip groups with single state values.
-      .filter( |group| 0<group.len() )
-      .next()
-  }
-  //fn collapse () // Force eigenstate to single state.  Must be eigenstate with > 2 states into a single state.
-  //fn superpose () // Add this and specified waves to each other.  Neither should end up empty.
-  fn nextCollapse (&mut self, values: &Qstate) -> Option<bool> {
-    let group = self.smallestStateGroup()?;
-
-    // consider random state
-    let idx: usize = *group.iter().next().unwrap();
-
-    // move state to collapsed set
-    group.remove(&idx);
-    self.groups[0].insert(idx);
-
-    let (x,y) = (idx % self.w, idx / self.w);
-    let up =   x                   + ((self.h+y-1)%self.h)*self.w;
-    let down = x                   + ((       y+1)%self.h)*self.w;
-    let left = (self.w+x-1)%self.w + y                    *self.w;
-    let right= (       x+1)%self.w + y                    *self.w;
-    println!("@{} x{} y{}  up{} down{} left{} rigt{}", idx, x, y, up, down, left, right);
-
-    // consider random state
-    println!("states @{}  u{} d{} l{} r{}", self.field[idx], self.field[up], self.field[down], self.field[left], self.field[right]);
-    let state = self.field[idx] & self.field[up] & self.field[down] & self.field[left] & self.field[right];
-    //let isAlreadyOne = 1 == bitscount(state);
-
-    // Collapse state to single value
-
-    let ornd = rndbit(state); // 0..3
-    //println!("idx={}  state={} =>  ornd={:?} {}", idx, state, ornd, isAlreadyOne);
-    let rnd = match ornd {
-      Some(idx) => idx,
-      None => return Some(false)
-    };
-
-    let value = 1<<rnd;       // eigenvalue
-    self.field[idx] = value;
-    println!("collapsing {} to {:?}", state, value);
-
-    //if isAlreadyOne { return Some(true) }
-
-    // Add collapsed state to its neighbors (lowering their entropy)
-
-    let value = &values.values[rnd];
-    let rules = &values.rules[rnd];
-    println!("collapsing {},{};{:<2} {:08b} -> {} {} rules{:?}",
-      x,y, idx, state, rnd, value, rules);
-
-    let upBitCount = bitscount(self.field[up]);
-    let downBitCount = bitscount(self.field[down]);
-    let leftBitCount = bitscount(self.field[left]);
-    let rightBitCount = bitscount(self.field[right]);
-
-    if upBitCount < 2 { println!("error up={} Bitcount {}", up, upBitCount); }
-    if downBitCount < 2 { println!("error dn={} Bitcount {}", down, downBitCount); }
-    if leftBitCount < 2 { println!("error lf={} Bitcount {}", left, leftBitCount); }
-    if rightBitCount < 2 { println!("error ri={} Bitcount {}", right, rightBitCount); }
-
-    if 1 < bitscount(self.field[up]) { self.field[up] &= values.rules[rnd][0] }
-    if 1 < bitscount(self.field[down]) { self.field[down] &= values.rules[rnd][2] }
-    if 1 < bitscount(self.field[left]) { self.field[left] &= values.rules[rnd][3] }
-    if 1 < bitscount(self.field[right]) { self.field[right] &= values.rules[rnd][1] }
-
-    let upBitCountNew = bitscount(self.field[up]);
-    let downBitCountNew = bitscount(self.field[down]);
-    let leftBitCountNew = bitscount(self.field[left]);
-    let rightBitCountNew = bitscount(self.field[right]);
-
-    println!("{}->{}  {}->{}  {}->{}  {}->{}",
-      upBitCount, upBitCountNew,
-      downBitCount, downBitCountNew,
-      leftBitCount, leftBitCountNew,
-      rightBitCount, rightBitCountNew);
-    if upBitCount != upBitCountNew       { self.groups[upBitCount-1].remove(&up); self.groups[upBitCountNew-1].insert(up); }
-    if downBitCount != downBitCountNew   { self.groups[downBitCount-1].remove(&down); self.groups[downBitCountNew-1].insert(down); }
-    if leftBitCount != leftBitCountNew   { self.groups[leftBitCount-1].remove(&left); self.groups[leftBitCountNew-1].insert(left); }
-    if rightBitCount != rightBitCountNew { self.groups[rightBitCount-1].remove(&right); self.groups[rightBitCountNew-1].insert(right); }
-
-    Some(true)
-  }
+    fn projectState(&mut self, y: usize, x: usize) {
+        self.projectdir((y+self.term.h-1)%self.term.h, x, y,x, 0);
+        self.projectdir((y+1)            %self.term.h, x, y,x, 1);
+        self.projectdir(y, (x+1)            %self.term.w, y,x, 2);
+        self.projectdir(y, (x+self.term.w-1)%self.term.w, y,x, 3);
+    }
+    fn collapse(&mut self, y: usize, x: usize) {
+        let p = (y, x);
+        // Move state to 1-state group
+        let sscount = self.grid[y][x].count();
+        self.groups[sscount].remove(&p);
+        self.groups[1].insert(p);
+        self.grid[y][x].collapse();
+        if 0 == self.grid[y][x].count() { println!("\x1b[31mERROR-IS-ZERO-{},{}",y,x); }
+        self.projectState(y, x);
+    }
+    fn collapseMaybe(&mut self) -> bool {
+        let (y,x) = if 0 < self.groups[2].len() {
+            let (y,x) = { let p = self.groups[2].iter().next().unwrap(); (p.0, p.1) };
+            self.groups[2].remove(&(y, x));
+            (y, x)
+        } else if 0 < self.groups[3].len() {
+            let (y,x) = { let p = self.groups[3].iter().next().unwrap(); (p.0, p.1) };
+            self.groups[3].remove(&(y, x));
+            (y, x)
+        } else if 0 < self.groups[4].len() {
+            let (y,x) = { let p = self.groups[4].iter().next().unwrap(); (p.0, p.1) };
+            self.groups[4].remove(&(y, x));
+            (y, x)
+        } else {
+            return false
+       };
+       self.collapse(y, x);
+       true
+    }
 }
+
+impl Debug for WaveFunction {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        //fmt.write_str("\n");
+        self.grid.iter().for_each(|r| {
+            r.iter().for_each(|ss| {
+                    let mut s = 0;
+                    fmt.write_str( &"\x1b[100m" );
+                    fmt.write_str( if ss.states.get(&0).is_some() { &" " } else { s+=1; &"" } );
+                    fmt.write_str( if ss.states.get(&1).is_some() { &"+" } else { s+=1; &"" } );
+                    fmt.write_str( if ss.states.get(&2).is_some() { &"-" } else { s+=1; &"" } );
+                    fmt.write_str( if ss.states.get(&3).is_some() { &"|" } else { s+=1; &"" } );
+                    fmt.write_str( &"\x1b[0m " );
+                    fmt.write_str( &"    "[0..s] );
+            });
+            fmt.write_str("\n");
+        });
+        fmt.write_str(&format!("{:?}\n", self.groups[0]))?;
+        fmt.write_str(&format!("{:?}\n", self.groups[1]))?;
+        fmt.write_str(&format!("{:?}\n", self.groups[2]))?;
+        fmt.write_str(&format!("{:?}\n", self.groups[3]))?;
+        fmt.write_str(&format!("{:?}\n", self.groups[4]))?;
+        Ok(())
+    }
+}
+
+impl Display for WaveFunction {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        self.grid.iter().for_each(|r| {
+            r.iter().for_each(|ss| {
+                match ss.states.len() {
+                    0 => fmt.write_str("     "),
+                    1 => fmt.write_str(&self.states[*ss.states.iter().next().unwrap()].glyph),
+                    l => fmt.write_str(&format!("{}", l))
+                };
+            });
+            fmt.write_str("\n");
+        });
+        Ok(())
+    }
+}
+
 
 // Main //////////////////////////////////////////////////////////////
 
-pub fn main () {
-  let term = Term::new(); //let term = Term{w:8, h:8};
-  let mut states = vec!( //  D A/B C
-    State::new(0, " ", &[&[0,1,2  ],&[0,1,2  ],&[0,1,  3],&[0,1,  3]]),
-    State::new(1, "+", &[&[0,1,  3],&[0,1,  3],&[0,1,2  ],&[0,1,2  ]]),
-    State::new(2, "-", &[&[0,  2  ],&[0,  2  ],&[  1,2  ],&[  1,2  ]]),
-    State::new(3, "|", &[&[  1,  3],&[  1,  3],&[0,    3],&[0,    3]]),
-  );
+fn header () {
   println!("\x1b[31m__        _______ ____ ");
   println!("\x1b[33m\\ \\      / /  ___/ ___|");
   println!("\x1b[32m \\ \\ /\\ / /| |_ | |    ");
   println!("\x1b[34m  \\ V  V / |  _|| |___ ");
   println!("\x1b[35m   \\_/\\_/  |_|   \\____|\x1b[0m");
-
-  println!("{:?}", term);
-
-  for s in &states {
-    println!("{:?}", s);
-  }
-
-  for s in &mut states {
-    s.projections[0].collapse();
-  }
-  println!("");
-
-  for s in &states {
-    println!("{:?}", s);
-  }
-
-  return;
-  
-  let mut values = Qstate::new(&[' ','+', '-', '|']);
-  //                up       right    down     left
-  values.mask(0, &[&[0,2], &[0,3], &[0,2], &[0,3]]);
-  values.mask(1, &[&[1,3], &[1,2], &[1,3], &[1,2]]);
-  values.mask(2, &[&[0,2], &[1,2], &[0,2], &[1,2]]);
-  values.mask(3, &[&[1,3], &[0,3], &[1,3], &[0,3]]);
-  let mut states = States::new(term.w, term.h, values.count());
-  //println!("{:?}\n\n{:?}\n\n{:?}", term, values, states);
-  while states.nextCollapse(&values).is_some() {
-    //println!("{:?}\n\n{:?}\n\n{:?}", term, values, states);
-    for y in 0..term.h {
-      for x in 0..term.w {
-        let state = states.field[x+y*term.w];
-        let bc = bitscount(state);
-        if 1 == bc {
-          let rb = rndbit(state).unwrap();
-          print!("{}", values.values[rb])
-        } else {
-          print!("{}", bc)
-        }
-      }
-      println!()
-    }
-    let mut buff = String::new();
-    println!("{:?}", std::io::stdin().read_line(&mut buff));
-  }
 }
 
+pub fn main () {
+  //header();
+  let states = vec!( //  D A/B C
+    State::new(0, " ", &[&[0,1,2  ],&[0,1,2  ],&[0,1,  3],&[0,1,  3]]),
+    //State::new(1, "+", &[&[0,1,  3],&[0,1,  3],&[0,1,2  ],&[0,1,2  ]]),
+    State::new(1, "+", &[&[0,    3],&[0,    3],&[0,  2  ],&[0,  2  ]]), // no ++ connections
+    State::new(2, "-", &[&[0,  2  ],&[0,  2  ],&[  1,2  ],&[  1,2  ]]),
+    State::new(3, "|", &[&[  1,  3],&[  1,  3],&[0,    3],&[0,    3]]),
+  );
 
+  //for s in &states { println!("{:?}", s); }
+
+  let mut wf = WaveFunction::new(states, &[0,1,2,3]);
+
+  //let x=0; let y=0; wf.collapse(y,x);
+  print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
+  while wf.collapseMaybe() {
+      //let mut buff = String::new();
+      //println!("{:?}", stdin().read_line(&mut buff));
+  }
+      print!("{}", wf);
+}
+  
 /*
  * https://en.wikipedia.org/wiki/Quantum_superposition
  * https://en.wikipedia.org/wiki/Wave_function_collapse
+
+  D A/B C : directions
 
   Wavefunction Collapse
     Wavefunction - Initial superposition of basis states.  Observing
@@ -370,12 +285,27 @@ pub fn main () {
 
 , collections::HashMap};
    X / \    diagonals 
-
    < > ^ V  transitions
-
    + - |    cartesianals
   let hm = HashMap::<usize, usize>::new();
   println!("{:?} {:?}", hm, vec![1,2,3]);
 
-map z :w!<cr>:!rustc % && ./helloRust $(stty size)<cr>
+  map z :w!<cr>:!rustc % && ./helloRust $(stty size)<cr>
+
+Collapse center, Superpose orthogonals
+         +-|
+  +-|    +      +-|
+         +-|
+
+   +     +-+ |
+   |     | +_+   
+
+collapsing a QS will
+   superpose itself with each of its orthogonal neighbors
+   collapse to a random value
+   superpose its neighbors with their orthogonal neighbors
+
+superpose and self with orthogonal states' constraints
+
+
 */
