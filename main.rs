@@ -60,7 +60,7 @@ impl State {
 ////////////////////////////////////////
 
 struct SuperState {
-   states: HashSet<usize>
+    states: HashSet<usize>
 }
 
 impl SuperState {
@@ -91,11 +91,11 @@ impl Debug for SuperState {
 }
 ////////////////////////////////////////
 
-struct WaveFunction {
-  term: Term,
-  states: Vec<State>,
-  grid: Vec<Vec<SuperState>>, // Grid of states (state == one or more possible values)
-  groups: Vec<HashSet<(usize,usize)>> // Group values by wave count
+pub struct WaveFunction {
+    term: Term,
+    states: Vec<State>,
+    grid: Vec<Vec<SuperState>>, // Grid of states (state == one or more possible values)
+    groups: Vec<HashSet<(usize,usize)>> // Group values by wave count
 }
 
 impl WaveFunction {
@@ -140,8 +140,6 @@ impl WaveFunction {
         if sscount != sscountfinal {
             self.groups[sscount].remove(&p);
             self.groups[sscountfinal].insert(p);
-      //print!("{}", self);
-      //readline();
             self.projectState(p)
         }
     }
@@ -176,22 +174,23 @@ impl WaveFunction {
             None => false
         }
     }
+    pub fn print (&self) { print!("{}\x1b[0m", self) }
+    pub fn debug (&self) { print!("{:?}\x1b[0m", self) }
 }
 
 impl Debug for WaveFunction {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
-        //fmt.write_str("\n");
         self.grid.iter().for_each(|r| {
             r.iter().for_each(|ss| {
-                    let mut s = 0;
-                    fmt.write_str( &"\x1b[100m" ).ok();
-                    fmt.write_str( if ss.states.get(&0).is_some() { &" " } else { s+=1; &"" } ).ok();
-                    fmt.write_str( if ss.states.get(&1).is_some() { &"+" } else { s+=1; &"" } ).ok();
-                    fmt.write_str( if ss.states.get(&2).is_some() { &"-" } else { s+=1; &"" } ).ok();
-                    fmt.write_str( if ss.states.get(&3).is_some() { &"|" } else { s+=1; &"" } ).ok();
-                    fmt.write_str( if ss.states.get(&4).is_some() { &"#" } else { s+=1; &"" } ).ok();
-                    fmt.write_str( &"\x1b[0m " ).ok();
-                    fmt.write_str( &"     "[0..s] ).ok();
+                let mut s = 0;
+                fmt.write_str(&"\x1b[100m" ).ok();
+                fmt.write_str(if ss.states.get(&0).is_some() { &" " } else { s+=1; &"" } ).ok();
+                fmt.write_str(if ss.states.get(&1).is_some() { &"+" } else { s+=1; &"" } ).ok();
+                fmt.write_str(if ss.states.get(&2).is_some() { &"-" } else { s+=1; &"" } ).ok();
+                fmt.write_str(if ss.states.get(&3).is_some() { &"|" } else { s+=1; &"" } ).ok();
+                fmt.write_str(if ss.states.get(&4).is_some() { &"#" } else { s+=1; &"" } ).ok();
+                fmt.write_str(&"\x1b[0m " ).ok();
+                fmt.write_str(&"     "[0..s] ).ok();
             });
             fmt.write_str("\n").ok();
         });
@@ -225,33 +224,48 @@ impl Display for WaveFunction {
 // Main //////////////////////////////////////////////////////////////
 
 pub fn header () {
-  println!("\x1b[31m__        _______ ____ ");
-  println!("\x1b[33m\\ \\      / /  ___/ ___|");
-  println!("\x1b[32m \\ \\ /\\ / /| |_ | |    ");
-  println!("\x1b[34m  \\ V  V / |  _|| |___ ");
-  println!("\x1b[35m   \\_/\\_/  |_|   \\____|\x1b[0m");
+    println!("\x1b[31m__        _______ ____ ");
+    println!("\x1b[33m\\ \\      / /  ___/ ___|");
+    println!("\x1b[32m \\ \\ /\\ / /| |_ | |    ");
+    println!("\x1b[34m  \\ V  V / |  _|| |___ ");
+    println!("\x1b[35m   \\_/\\_/  |_|   \\____|\x1b[0m");
 }
 
-pub fn main () {
-  //header();
-  let states = vec!( //  D A/B C
-    State::new(0, " ", &[&[0,1,2  ,4],&[0,1,2  ,4],&[0,1,  3,4],&[0,1,  3,4]]),
-    //State::new(1, "+", &[&[0,1,  3],&[0,1,  3],&[0,1,2  ],&[0,1,2  ]]),
-    State::new(1, "\x1b[0;31m+", &[&[0,    3],&[0,    3],&[0,  2  ],&[0,  2  ]]), // no ++ connections
-    State::new(2, "\x1b[0;31m-", &[&[0      ],&[0      ],&[  1,2  ],&[  1,2  ]]),
-    State::new(3, "\x1b[0;31m|", &[&[  1,  3],&[  1,  3],&[0      ],&[0      ]]),
-    State::new(4, "\x1b[0;32m$", &[&[0,     ],&[0,     ],&[0,     ],&[0,     ]]),
-  );
+fn moneyDungeon () -> WaveFunction {
+    let mut wf = WaveFunction::new(vec!(
+        State::new(0, " ", &[&[0,1,2  ,4],&[0,1,2  ,4],&[0,1,  3,4],&[0,1,  3,4]]),
+        //State::new(1, "+", &[&[0,1,  3],&[0,1,  3],&[0,1,2  ],&[0,1,2  ]]),
+        State::new(1, "\x1b[1;31m+", &[&[0,    3],&[0,    3],&[0,  2  ],&[0,  2  ]]), // no ++ connections
+        State::new(2, "\x1b[1;31m-", &[&[0      ],&[0      ],&[  1,2  ],&[  1,2  ]]),
+        State::new(3, "\x1b[1;31m|", &[&[  1,  3],&[  1,  3],&[0      ],&[0      ]]),
+        State::new(4, "\x1b[1;32m$", &[&[0,     ],&[0,     ],&[0,     ],&[0,     ]]),
+    ));
+    while wf.collapseMaybe() {
+        if !true { print!("{}", wf); readline(); }
+    }
+    wf
+}
 
-  let mut wf = WaveFunction::new(states);
+pub fn ultima () -> WaveFunction {
+    let mut wf = WaveFunction::new(vec!(
+        State::new(0, "\x1b[44m ", &[&[0,1],  &[0,1],  &[0,1],  &[0,1]]),
+        State::new(1, "\x1b[104m ",&[&[0,1,2],&[0,1,2],&[0,1,2],&[0,1,2]]),
+        State::new(2, "\x1b[43m ", &[&[1,2,3],&[1,2,3],&[1,2,3],&[1,2,3]]),
+        State::new(3, "\x1b[42m ", &[&[2,3,4],&[2,3,4],&[2,3,4],&[2,3,4]]),
+        State::new(4, "\x1b[47m ", &[&[3,4,5],&[3,4,5],&[3,4,5],&[3,4,5]]),
+        State::new(5, "\x1b[107m ",&[&[4,5],  &[4,5],  &[4,5],  &[4,5]]),
+    ));
+    while wf.collapseMaybe() {
+        if !true { print!("{}", wf); readline(); }
+    }
+    wf
+}
 
-  //print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
-  while wf.collapseMaybe() {
-      //print!("x1b[H{}");
-      //print!("{}", wf);
-      //readline();
-  }
-  print!("{}", wf);
+fn main () {
+    //header();
+    //print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
+    ultima().print();
+    moneyDungeon().print();
 }
   
 /*
