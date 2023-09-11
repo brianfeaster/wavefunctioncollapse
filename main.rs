@@ -10,7 +10,13 @@ use std::{
 };
 
 
-type Res<T> = Result<T, Box<dyn Error>>;
+pub type Res<T> = Result<T, Box<dyn Error>>;
+
+pub fn readline () -> String {
+    let mut buff = String::new();
+    stdin().read_line(&mut buff).ok();
+    buff
+}
 
 // Terminal //////////////////////////////////////////////////////////
 
@@ -32,12 +38,11 @@ impl Term {
 
 ////////////////////////////////////////
 
-
-#[derive(Debug)]
-struct State {
-    id: usize,
+// AKA Eigenstate
+pub struct State {
+    pub id: usize,
     glyph: String,
-    projections: Vec<SuperState>
+    projections: Vec<SuperState> // Superstates allowed for each direction
 }
 
 impl State {
@@ -46,8 +51,8 @@ impl State {
             id,
             glyph: glyph.to_string(),
             projections: projections.iter()
-                .map(|ss| SuperState::from(ss))
-                .collect::<Vec<SuperState>>()
+                .map(|states| SuperState::from(states))
+                .collect()
         }
     }
 }
@@ -62,20 +67,17 @@ impl SuperState {
     fn from (states: &[usize]) -> SuperState {
         SuperState{states:HashSet::from_iter(states.iter().map(|i|*i))}
     }
-    fn project (&self, hss: &HashSet<usize>) -> HashSet<usize> {
-        HashSet::from_iter(self.states.intersection(hss).map(|i|*i))
+    fn intersect (&self, hss: &HashSet<usize>) -> HashSet<usize> {
+        self.states.intersection(hss).map(|&i|i).collect()
     }
     fn count (&self) -> usize {
         self.states.len()
     }
-    fn states (&self) -> impl Iterator<Item=&usize> + '_ {
-        self.states.iter()
+    fn states (&self) -> impl Iterator<Item=usize> + '_{
+        self.states.iter().map(|i|*i)
     }
     fn collapse (&mut self) -> usize {
-        let i = *self.states.iter()
-            .next().ok_or("superstate empty")
-            .map_err(|e| println!("ERROR: {:?}", e))
-            .unwrap();
+        let i = *self.states.iter().next().expect("superstate empty");
         self.states.clear();
         self.states.insert(i);
         i
@@ -84,8 +86,7 @@ impl SuperState {
 
 impl Debug for SuperState {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
-        fmt.write_str(&format!("{:?}", self.states));
-        Ok(())
+        fmt.write_str(&format!("{:?}", self.states))
     }
 }
 ////////////////////////////////////////
@@ -98,92 +99,82 @@ struct WaveFunction {
 }
 
 impl WaveFunction {
-    fn new (states: Vec<State>, ss: &[usize]) -> WaveFunction {
-        let mut groups: Vec<HashSet<(usize, usize)>> = (0..=4).into_iter().map(|_| HashSet::new()).collect();
+    fn new (states: Vec<State>) -> WaveFunction {
         let term = Term::new();
+        let numStates = states.len();
+        let fullSuperState = &(0..numStates).collect::<Vec<_>>()[..];
+        let mut groups: Vec<HashSet<_>> = (0..=numStates)
+            .into_iter()
+            .map(|_| HashSet::new())
+            .collect();
         WaveFunction{
             grid: (0..term.h).into_iter()
                 .map(|y| (0..term.w).into_iter()
                     .map(|x| {
-                        groups[4].insert((y,x));
-                        SuperState::from(ss)
+                        groups[numStates].insert((y,x));
+                        SuperState::from(fullSuperState)
                     }).collect())
                 .collect(),
             term, states,
             groups
         }
     }
-    //fn projection(&self, id: usize, dir: usize) -> &SuperState {
-    //    &self.states[id].projections[dir]
-    //}
-    fn projectdir(&mut self, y: usize, x: usize, oy: usize, ox: usize, dir: usize) {
-
-
-        let sscount = self.grid[y][x].count(); // trying to project onto collapsed state
-        if sscount < 2 { return }
+    fn projectdir(&mut self, p: (usize, usize), oy: usize, ox: usize, dir: usize) {
+        let (y, x) = p;
+        let sscount = self.grid[y][x].count();
+        if sscount < 2 { return } // Skip collapsed state
 
         let mut projected_super_state = HashSet::new(); // Assemble projection sstate
-        let id = self.grid[oy][ox].states().for_each( |id|
-            self.states[*id].projections[dir].states.iter().for_each(|id| {
+        self.grid[oy][ox].states().for_each( |id| // over all states in this superstate...
+            self.states[id].projections[dir].states.iter().for_each(|id| { // union states in this direction creating a projection
                 projected_super_state.insert(*id);
             }));
 
-
-        let hashset2 = self.grid[y][x].project(&projected_super_state);
+        let hashset2 = self.grid[y][x].intersect(&projected_super_state);
         let ss = &mut self.grid[y][x];
         ss.states.clear();
         ss.states = hashset2;
 
         let sscountfinal = ss.states.len();
 
-      //println!("{:?}", self);
-      //if 0 == sscountfinal{ println!("\x1b[31mERROR-IS-ZERO-{},{}",y,x); }
-      //let mut buff = String::new();
-      //println!("{:?}", stdin().read_line(&mut buff));
-
-
         if sscount != sscountfinal {
-            let p = (y, x);
             self.groups[sscount].remove(&p);
             self.groups[sscountfinal].insert(p);
-            //if 1 == sscountfinal { self.projectState(y, x) }
-            if 0 != sscountfinal { self.projectState(y, x) }
+      //print!("{}", self);
+      //readline();
+            self.projectState(p)
         }
     }
-    fn projectState(&mut self, y: usize, x: usize) {
-        self.projectdir((y+self.term.h-1)%self.term.h, x, y,x, 0);
-        self.projectdir((y+1)            %self.term.h, x, y,x, 1);
-        self.projectdir(y, (x+1)            %self.term.w, y,x, 2);
-        self.projectdir(y, (x+self.term.w-1)%self.term.w, y,x, 3);
+    fn projectState(&mut self, p: (usize, usize)) {
+        let (y, x) = p;
+        self.projectdir(((y+self.term.h-1)%self.term.h, x), y,x, 0);
+        self.projectdir(((y+1)            %self.term.h, x), y,x, 1);
+        self.projectdir((y, (x+1)            %self.term.w), y,x, 2);
+        self.projectdir((y, (x+self.term.w-1)%self.term.w), y,x, 3);
     }
-    fn collapse(&mut self, y: usize, x: usize) {
-        let p = (y, x);
-        // Move state to 1-state group
-        let sscount = self.grid[y][x].count();
-        self.groups[sscount].remove(&p);
-        self.groups[1].insert(p);
+    fn collapseAt(&mut self, p: (usize, usize)) {
+        let (y, x) = p;
+        assert!(2 <= self.grid[y][x].count()); // Should only collapse superstates
         self.grid[y][x].collapse();
-        if 0 == self.grid[y][x].count() { println!("\x1b[31mERROR-IS-ZERO-{},{}",y,x); }
-        self.projectState(y, x);
+        self.projectState(p);
     }
-    fn collapseMaybe(&mut self) -> bool {
-        let (y,x) = if 0 < self.groups[2].len() {
-            let (y,x) = { let p = self.groups[2].iter().next().unwrap(); (p.0, p.1) };
-            self.groups[2].remove(&(y, x));
-            (y, x)
-        } else if 0 < self.groups[3].len() {
-            let (y,x) = { let p = self.groups[3].iter().next().unwrap(); (p.0, p.1) };
-            self.groups[3].remove(&(y, x));
-            (y, x)
-        } else if 0 < self.groups[4].len() {
-            let (y,x) = { let p = self.groups[4].iter().next().unwrap(); (p.0, p.1) };
-            self.groups[4].remove(&(y, x));
-            (y, x)
-        } else {
-            return false
-       };
-       self.collapse(y, x);
-       true
+    fn getLowestEntropy(&mut self) -> Option<(usize, usize)> {
+        self.groups.iter_mut()
+            .skip(2)
+            .find(|v| 0<v.len())
+            .map(|v| v
+                .take(&v.iter().next().unwrap().clone())
+                .unwrap())
+            .map(|p| { // Move to 1-state group
+                self.groups[1].insert(p);
+                p
+            })
+    }
+    pub fn collapseMaybe(&mut self) -> bool {
+        match self.getLowestEntropy() {
+            Some(p) => { self.collapseAt(p); true}
+            None => false
+        }
     }
 }
 
@@ -193,21 +184,23 @@ impl Debug for WaveFunction {
         self.grid.iter().for_each(|r| {
             r.iter().for_each(|ss| {
                     let mut s = 0;
-                    fmt.write_str( &"\x1b[100m" );
-                    fmt.write_str( if ss.states.get(&0).is_some() { &" " } else { s+=1; &"" } );
-                    fmt.write_str( if ss.states.get(&1).is_some() { &"+" } else { s+=1; &"" } );
-                    fmt.write_str( if ss.states.get(&2).is_some() { &"-" } else { s+=1; &"" } );
-                    fmt.write_str( if ss.states.get(&3).is_some() { &"|" } else { s+=1; &"" } );
-                    fmt.write_str( &"\x1b[0m " );
-                    fmt.write_str( &"    "[0..s] );
+                    fmt.write_str( &"\x1b[100m" ).ok();
+                    fmt.write_str( if ss.states.get(&0).is_some() { &" " } else { s+=1; &"" } ).ok();
+                    fmt.write_str( if ss.states.get(&1).is_some() { &"+" } else { s+=1; &"" } ).ok();
+                    fmt.write_str( if ss.states.get(&2).is_some() { &"-" } else { s+=1; &"" } ).ok();
+                    fmt.write_str( if ss.states.get(&3).is_some() { &"|" } else { s+=1; &"" } ).ok();
+                    fmt.write_str( if ss.states.get(&4).is_some() { &"#" } else { s+=1; &"" } ).ok();
+                    fmt.write_str( &"\x1b[0m " ).ok();
+                    fmt.write_str( &"     "[0..s] ).ok();
             });
-            fmt.write_str("\n");
+            fmt.write_str("\n").ok();
         });
         fmt.write_str(&format!("{:?}\n", self.groups[0]))?;
         fmt.write_str(&format!("{:?}\n", self.groups[1]))?;
         fmt.write_str(&format!("{:?}\n", self.groups[2]))?;
         fmt.write_str(&format!("{:?}\n", self.groups[3]))?;
         fmt.write_str(&format!("{:?}\n", self.groups[4]))?;
+        fmt.write_str(&format!("{:?}\n", self.groups[5]))?;
         Ok(())
     }
 }
@@ -220,9 +213,9 @@ impl Display for WaveFunction {
                     0 => fmt.write_str("     "),
                     1 => fmt.write_str(&self.states[*ss.states.iter().next().unwrap()].glyph),
                     l => fmt.write_str(&format!("{}", l))
-                };
+                }.ok();
             });
-            fmt.write_str("\n");
+            fmt.write_str("\n").ok();
         });
         Ok(())
     }
@@ -231,7 +224,7 @@ impl Display for WaveFunction {
 
 // Main //////////////////////////////////////////////////////////////
 
-fn header () {
+pub fn header () {
   println!("\x1b[31m__        _______ ____ ");
   println!("\x1b[33m\\ \\      / /  ___/ ___|");
   println!("\x1b[32m \\ \\ /\\ / /| |_ | |    ");
@@ -242,24 +235,23 @@ fn header () {
 pub fn main () {
   //header();
   let states = vec!( //  D A/B C
-    State::new(0, " ", &[&[0,1,2  ],&[0,1,2  ],&[0,1,  3],&[0,1,  3]]),
+    State::new(0, " ", &[&[0,1,2  ,4],&[0,1,2  ,4],&[0,1,  3,4],&[0,1,  3,4]]),
     //State::new(1, "+", &[&[0,1,  3],&[0,1,  3],&[0,1,2  ],&[0,1,2  ]]),
-    State::new(1, "+", &[&[0,    3],&[0,    3],&[0,  2  ],&[0,  2  ]]), // no ++ connections
-    State::new(2, "-", &[&[0,  2  ],&[0,  2  ],&[  1,2  ],&[  1,2  ]]),
-    State::new(3, "|", &[&[  1,  3],&[  1,  3],&[0,    3],&[0,    3]]),
+    State::new(1, "\x1b[0;31m+", &[&[0,    3],&[0,    3],&[0,  2  ],&[0,  2  ]]), // no ++ connections
+    State::new(2, "\x1b[0;31m-", &[&[0      ],&[0      ],&[  1,2  ],&[  1,2  ]]),
+    State::new(3, "\x1b[0;31m|", &[&[  1,  3],&[  1,  3],&[0      ],&[0      ]]),
+    State::new(4, "\x1b[0;32m$", &[&[0,     ],&[0,     ],&[0,     ],&[0,     ]]),
   );
 
-  //for s in &states { println!("{:?}", s); }
+  let mut wf = WaveFunction::new(states);
 
-  let mut wf = WaveFunction::new(states, &[0,1,2,3]);
-
-  //let x=0; let y=0; wf.collapse(y,x);
-  print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
+  //print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
   while wf.collapseMaybe() {
-      //let mut buff = String::new();
-      //println!("{:?}", stdin().read_line(&mut buff));
+      //print!("x1b[H{}");
+      //print!("{}", wf);
+      //readline();
   }
-      print!("{}", wf);
+  print!("{}", wf);
 }
   
 /*
