@@ -1,0 +1,6 @@
+[package]
+name = "wavefunction"
+version = "8.675.309"
+edition = "2021"
+
+[dependencies]

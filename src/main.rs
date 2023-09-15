@@ -6,8 +6,16 @@ use std::{
     error::Error,
     fmt::{self, Debug, Display, Formatter},
     io::stdin,
+    thread, time::Duration
 };
 
+////////////////////////////////////////////////////////////////////////////////
+
+pub const SAV: &str = "\x1b7";
+pub const RES: &str = "\x1b8";
+pub const HOM: &str = "\x1b[H";
+pub const RST: &str = "\x1b[0m";
+pub const FLS: &str = "\x1b[5m";
 
 pub type Res<T> = Result<T, Box<dyn Error>>;
 
@@ -16,6 +24,11 @@ pub fn readline() -> String {
     stdin().read_line(&mut buff).ok();
     buff
 }
+
+pub fn sleep (secs: f64)  {
+    thread::sleep(Duration::from_millis( (secs*1000.0) as u64));
+}
+
 
 // Terminal //////////////////////////////////////////////////////////
 
@@ -200,7 +213,7 @@ impl WaveFunction {
         if sscount < 2 { return } // Skip already collapsed state
 
         // The "top row is ignored...disables y-axis torus mapping.
-        //if (op.y==self.top && 0==dir) || ((op.y+1)%self.term.h==self.top && 1==dir) { return }
+        if (op.y==self.top && 0==dir) || ((op.y+1)%self.term.h==self.top && 1==dir) { return }
 
         let hashset2 = self.ss_ref(&p).intersect(&self.projection_ss(&self.ss_ref(&op).states, dir));
         let sscountfinal = hashset2.len();
@@ -316,7 +329,7 @@ impl Display for WaveFunction {
             r.iter().for_each(|ss| {
                 match ss.states.len() {
                     1 => fmt.write_str(&self.basestates[*ss.states.iter().next().expect("can not occur")].glyph.glyph()),
-                    l => fmt.write_str(&format!("{}", l))
+                    l => fmt.write_str(&format!("\x1b[0m{}", l))
                 }.ok();
             });
             if y < self.term.h-1 { fmt.write_str("\n").ok(); }
@@ -345,6 +358,7 @@ pub fn moneyDungeon () -> WaveFunction {
         State::new(4, ("\x1b[1;32m","$"), &[&[0,     ],&[0,     ],&[0,     ],&[0,     ]]),
     ));
     while wf.collapseMaybe() { }
+    print!("{HOM}\n");
     if !true {
         print!("\x1b[H");
         wf.print();
@@ -377,6 +391,7 @@ pub fn ultima () -> WaveFunction {
         State::new(5, ("\x1b[1;37m", &BLK.to_string()), &[&[4,5],  &[4,5],  &[4,5],  &[4,5]]),
     ));
     while wf.collapseMaybe() { }
+    print!("{HOM}\n");
     if !true {
         print!("\x1b[H");
         wf.print();
@@ -393,43 +408,43 @@ pub fn ultima () -> WaveFunction {
     wf
 }
 
-pub fn rogue () -> WaveFunction {
+pub fn mobo () -> WaveFunction {
     let mut wf = WaveFunction::new(vec!(
         // outside space D A/B C
-        State::new(0, ("\x1b[32m","."), &[&[0,3,4,6,11],&[0,1,2,5,11],&[0,1,3,8,10],&[0,2,4,7,10]]),
+        State::new(0, ("\x1b[42;32m"," "), &[&[0,3,4,6,11],&[0,1,2,5,11],&[0,1,3,8,10],&[0,2,4,7,10]]),
 
         // left upper corner
-        State::new(1, ("\x1b[31m","#"), &[&[0],&[8],&[5],&[0]]),
+        State::new(1, ("\x1b[1;42;37m","="), &[&[0],&[8],&[5],&[0]]),
         //             right upper corner
-        State::new(2, ("\x1b[31m","#"), &[&[0],&[7],&[0],&[5]]),
+        State::new(2, ("\x1b[1;42;37m","="), &[&[0],&[7],&[0],&[5]]),
         // left lower corner
-        State::new(3, ("\x1b[31m","#"), &[&[8],&[0],&[6],&[0]]),
+        State::new(3, ("\x1b[1;42;37m","="), &[&[8],&[0],&[6],&[0]]),
         //             right lower corner
-        State::new(4, ("\x1b[31m","#"), &[&[7],&[0],&[0],&[6]]),
+        State::new(4, ("\x1b[1;42;37m","="), &[&[7],&[0],&[0],&[6]]),
 
         //     Upper wall
-        State::new(5, ("\x1b[31m","="), &[&[0,10],&[9],&[2,5],&[1,5]]),
+        State::new(5, ("\x1b[1;40;31m"," "), &[&[0,10],&[9],&[2,5],&[1,5]]),
         //     Lower wall
-        State::new(6, ("\x1b[31m","="), &[&[9],&[0,10],&[4,6],&[3,6]]),
+        State::new(6, ("\x1b[1;40;31m"," "), &[&[9],&[0,10],&[4,6],&[3,6]]),
         //         Right wall
-        State::new(7, ("\x1b[31m","#"), &[&[2,7],&[4,7],&[0,11],&[9]]),
+        State::new(7, ("\x1b[1;42;37m","="), &[&[2,7],&[4,7],&[0,11],&[9]]),
         // Left wall
-        State::new(8, ("\x1b[31m","#"), &[&[1,8],&[3,8],&[9],&[0,11]]),
+        State::new(8, ("\x1b[1;42;37m","="), &[&[1,8],&[3,8],&[9],&[0,11]]),
 
         // inside space            D A/B C
-        State::new(9, ("\x1b[31m"," "), &[&[5,9],&[6,9],&[7,9],&[8,9]]),
+        State::new(9, ("\x1b[0;40;31m"," "), &[&[5,9],&[6,9],&[7,9],&[8,9]]),
 
         // verticle path
-        State::new(10, ("\x1b[33m","|"), &[&[6,10,12],&[5,10,12],&[0],&[0]]),
+        State::new(10, ("\x1b[1;42;32m","|"), &[&[6,10,12],&[5,10,12],&[0],&[0]]),
 
         // horizontal path
-        State::new(11, ("\x1b[33m","-"), &[&[0],&[0],&[8,11,12],&[7,11,12]]),
+        State::new(11, ("\x1b[1;42;32m","-"), &[&[0],&[0],&[8,11,12],&[7,11,12]]),
 
         // crossroad path
-        State::new(12, ("\x1b[33m","+"), &[&[10],&[10],&[11],&[11]]),
+        State::new(12, ("\x1b[1;42;32m","+"), &[&[10],&[10],&[11],&[11]]),
     ));
     while wf.collapseMaybe() {  }
-    //print!("\x1b[H{}\x1b[H", wf);
+    print!("{HOM}\n");
     if !true {
         wf.resetrow();
         for _ in 0..100 {
@@ -444,18 +459,73 @@ pub fn rogue () -> WaveFunction {
     }
     wf
 }
+pub fn rogue () -> WaveFunction {
+    let mut wf = WaveFunction::new(vec!(
+        // outside space D A/B C
+        State::new(0, ("\x1b[0;40;32m",":"), &[&[0,3,4,6,11],&[0,1,2,5,11],&[0,1,3,8,10],&[0,2,4,7,10]]),
 
-fn main () {
-    print!("\x1b[2J\x1b[H");
+        // left upper corner
+        State::new(1, ("\x1b[40;1;31m","#"), &[&[0],&[8],&[5],&[0]]),
+        //             right upper corner
+        State::new(2, ("\x1b[40;1;31m","#"), &[&[0],&[7],&[0],&[5]]),
+        // left lower corner
+        State::new(3, ("\x1b[40;1;31m","#"), &[&[8],&[0],&[6],&[0]]),
+        //             right lower corner
+        State::new(4, ("\x1b[40;1;31m","#"), &[&[7],&[0],&[0],&[6]]),
+
+        //     Upper wall
+        State::new(5, ("\x1b[1;40;31m","-"), &[&[0,10],&[9],&[2,5],&[1,5]]),
+        //     Lower wall
+        State::new(6, ("\x1b[1;40;31m","-"), &[&[9],&[0,10],&[4,6],&[3,6]]),
+        //         Right wall
+        State::new(7, ("\x1b[1;40;31m","|"), &[&[2,7],&[4,7],&[0,11],&[9]]),
+        // Left wall
+        State::new(8, ("\x1b[1;40;31m","|"), &[&[1,8],&[3,8],&[9],&[0,11]]),
+
+        // inside space            D A/B C
+        State::new(9, ("\x1b[1;40;30m","@"), &[&[5,9],&[6,9],&[7,9],&[8,9]]),
+
+        // verticle path
+        State::new(10, ("\x1b[0;40;36m","#"), &[&[6,10,12],&[5,10,12],&[0],&[0]]),
+
+        // horizontal path
+        State::new(11, ("\x1b[1;40;34m","="), &[&[0],&[0],&[8,11,12],&[7,11,12]]),
+
+        // crossroad path
+        State::new(12, ("\x1b[0;40;36m","#"), &[&[10],&[10],&[11],&[11]]),
+    ));
+    while wf.collapseMaybe() {  }
+    print!("{HOM}\n");
+    if !true {
+        for _ in 0..100 {
+            wf.resetrow();
+            while wf.collapseMaybe() { }
+            if true {
+                print!("\x1b[H\x1bM");
+                wf.printTop();
+                //readline();
+                //sleep(0.2);
+            }
+        }
+    }
+    wf
+}
+
+pub fn main () {
+    print!("USAGE:  wavefunctioncollapse [HEIGHT default 25] [WIDTH default 80]");
+    print!("{SAV}{HOM}");
     header();
     //print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
-    let wf =
-        //moneyDungeon();
-        //ultima();
-        rogue();
-    print!("\x1b[H{}\r", wf);
+    loop {
+        moneyDungeon(); sleep(3.0);
+        ultima(); sleep(3.0);
+        mobo(); sleep(3.0);
+        rogue(); sleep(3.0);
+    }
+    //print!("\x1b[H{}\r", wf);
     //print!("\x1b[{}H\x1b[1;37;41m{}\x1b[0m", wf.term.h, wf.info);
     //readline();
+    //print!("{RES}done.{RST}");
 }
 
 /*
@@ -496,4 +566,5 @@ collapsing a QS will
    superpose its neighbors with their orthogonal neighbors
 
 superpose and self with orthogonal states' constraints
+
 */
