@@ -259,6 +259,7 @@ impl WaveFunction {
             print!("{}", self.lastColor);
         }
         print!("\x1b[{};{}H{}", p.y+1, p.x+1, self.glyphAt(p).glyph);
+        //print!("\x1b[H\n"); readline();
     }
     pub fn print (&self) -> &Self { print!("{}\x1b[0m", self); self }
     pub fn printTop (&self) -> &Self {
@@ -314,12 +315,11 @@ impl Display for WaveFunction {
             //fmt.write_str(&format!("{:3} ", self.rowcount[y])).ok();
             r.iter().for_each(|ss| {
                 match ss.states.len() {
-                    0 => fmt.write_str("     "),
                     1 => fmt.write_str(&self.basestates[*ss.states.iter().next().expect("can not occur")].glyph.glyph()),
                     l => fmt.write_str(&format!("{}", l))
                 }.ok();
             });
-            fmt.write_str("\n").ok();
+            if y < self.term.h-1 { fmt.write_str("\n").ok(); }
         });
         Ok(())
     }
@@ -360,21 +360,21 @@ pub fn moneyDungeon () -> WaveFunction {
 }
 
 /*
-const blk :char = '◆';
-const blk :char = '●';
-const blk :char = '▮';
+const BLK :char = '◆';
+const BLK :char = '●';
+const BLK :char = '▮';
 */
-const blk :char = '◼';
+const BLK :char = '◼';
 
 
 pub fn ultima () -> WaveFunction {
     let mut wf = WaveFunction::new(vec!(
-        State::new(0, ("\x1b[0;34m", &blk.to_string()), &[&[0,1],  &[0,1],  &[0,1],  &[0,1]]),
-        State::new(1, ("\x1b[1;34m", &blk.to_string()), &[&[0,1,2],&[0,1,2],&[0,1,2],&[0,1,2]]),
-        State::new(2, ("\x1b[0;33m", &blk.to_string()), &[&[1,2,3],&[1,2,3],&[1,2,3],&[1,2,3]]),
-        State::new(3, ("\x1b[1;32m", &blk.to_string()), &[&[2,3,4],&[2,3,4],&[2,3,4],&[2,3,4]]),
-        State::new(4, ("\x1b[0;37m", &blk.to_string()), &[&[3,4,5],&[3,4,5],&[3,4,5],&[3,4,5]]),
-        State::new(5, ("\x1b[1;37m", &blk.to_string()), &[&[4,5],  &[4,5],  &[4,5],  &[4,5]]),
+        State::new(0, ("\x1b[0;34m", &BLK.to_string()), &[&[0,1],  &[0,1],  &[0,1],  &[0,1]]),
+        State::new(1, ("\x1b[1;34m", &BLK.to_string()), &[&[0,1,2],&[0,1,2],&[0,1,2],&[0,1,2]]),
+        State::new(2, ("\x1b[0;33m", &BLK.to_string()), &[&[1,2,3],&[1,2,3],&[1,2,3],&[1,2,3]]),
+        State::new(3, ("\x1b[1;32m", &BLK.to_string()), &[&[2,3,4],&[2,3,4],&[2,3,4],&[2,3,4]]),
+        State::new(4, ("\x1b[0;37m", &BLK.to_string()), &[&[3,4,5],&[3,4,5],&[3,4,5],&[3,4,5]]),
+        State::new(5, ("\x1b[1;37m", &BLK.to_string()), &[&[4,5],  &[4,5],  &[4,5],  &[4,5]]),
     ));
     while wf.collapseMaybe() { }
     if !true {
@@ -387,6 +387,58 @@ pub fn ultima () -> WaveFunction {
                 print!("\x1b[H\x1bM");
                 wf.printTop();
                 wf.resetrow();
+           }
+        }
+    }
+    wf
+}
+
+pub fn rogue () -> WaveFunction {
+    let mut wf = WaveFunction::new(vec!(
+        // outside space D A/B C
+        State::new(0, ("\x1b[32m","."), &[&[0,3,4,6,11],&[0,1,2,5,11],&[0,1,3,8,10],&[0,2,4,7,10]]),
+
+        // left upper corner
+        State::new(1, ("\x1b[31m","#"), &[&[0],&[8],&[5],&[0]]),
+        //             right upper corner
+        State::new(2, ("\x1b[31m","#"), &[&[0],&[7],&[0],&[5]]),
+        // left lower corner
+        State::new(3, ("\x1b[31m","#"), &[&[8],&[0],&[6],&[0]]),
+        //             right lower corner
+        State::new(4, ("\x1b[31m","#"), &[&[7],&[0],&[0],&[6]]),
+
+        //     Upper wall
+        State::new(5, ("\x1b[31m","="), &[&[0,10],&[9],&[2,5],&[1,5]]),
+        //     Lower wall
+        State::new(6, ("\x1b[31m","="), &[&[9],&[0,10],&[4,6],&[3,6]]),
+        //         Right wall
+        State::new(7, ("\x1b[31m","#"), &[&[2,7],&[4,7],&[0,11],&[9]]),
+        // Left wall
+        State::new(8, ("\x1b[31m","#"), &[&[1,8],&[3,8],&[9],&[0,11]]),
+
+        // inside space            D A/B C
+        State::new(9, ("\x1b[31m"," "), &[&[5,9],&[6,9],&[7,9],&[8,9]]),
+
+        // verticle path
+        State::new(10, ("\x1b[33m","|"), &[&[6,10,12],&[5,10,12],&[0],&[0]]),
+
+        // horizontal path
+        State::new(11, ("\x1b[33m","-"), &[&[0],&[0],&[8,11,12],&[7,11,12]]),
+
+        // crossroad path
+        State::new(12, ("\x1b[33m","+"), &[&[10],&[10],&[11],&[11]]),
+    ));
+    while wf.collapseMaybe() {  }
+    //print!("\x1b[H{}\x1b[H", wf);
+    if !true {
+        wf.resetrow();
+        for _ in 0..100 {
+            while wf.collapseMaybe() { }
+            if true {
+                print!("\x1b[H\x1bM");
+                wf.printTop();
+                wf.resetrow();
+                readline();
             }
         }
     }
@@ -394,13 +446,15 @@ pub fn ultima () -> WaveFunction {
 }
 
 fn main () {
+    print!("\x1b[2J\x1b[H");
     header();
     //print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
     let wf =
         //moneyDungeon();
-        ultima();
-    print!("\x1b[{}H\x1b[1;37;41m{}\x1b[0m", wf.term.h, wf.info);
-    //println!("\x1b[H");
+        //ultima();
+        rogue();
+    print!("\x1b[H{}\r", wf);
+    //print!("\x1b[{}H\x1b[1;37;41m{}\x1b[0m", wf.term.h, wf.info);
     //readline();
 }
 
