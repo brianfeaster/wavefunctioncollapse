@@ -232,9 +232,7 @@ impl WaveFunction {
                 self.rowcount[p.y] += 1;
                 self.plotGlyph(&p);
             }
-            if 0 == sscountfinal {
-                print!("\x1b[{};{}H{FLS}{IRED}!{RST}\n", p.y+1, p.x+1); readline();
-            }
+            //if 0 == sscountfinal { print!("\x1b[{};{}H{FLS}{IRED}!{RST}\n", p.y+1, p.x+1); readline(); }
             self.groups[sscount].remove(&p);
             self.groups[sscountfinal].insert(p.clone());
             self.projectState(&p)
