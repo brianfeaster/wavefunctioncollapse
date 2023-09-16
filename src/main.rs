@@ -11,10 +11,17 @@ use std::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+pub const BLK1 :char = '◆';
+pub const BLK2 :char = '●';
+pub const BLK3 :char = '▮';
+pub const BLK  :char = '◼';
+
 pub const SAV: &str = "\x1b7";
 pub const RES: &str = "\x1b8";
+pub const CLR: &str = "\x1b[2J";
 pub const HOM: &str = "\x1b[H";
 pub const RST: &str = "\x1b[0m";
+pub const IRED: &str = "\x1b[1;31m";
 pub const FLS: &str = "\x1b[5m";
 
 pub type Res<T> = Result<T, Box<dyn Error>>;
@@ -225,6 +232,9 @@ impl WaveFunction {
                 self.rowcount[p.y] += 1;
                 self.plotGlyph(&p);
             }
+            if 0 == sscountfinal {
+                print!("\x1b[{};{}H{FLS}{IRED}!{RST}\n", p.y+1, p.x+1); readline();
+            }
             self.groups[sscount].remove(&p);
             self.groups[sscountfinal].insert(p.clone());
             self.projectState(&p)
@@ -351,11 +361,58 @@ pub fn header () {
 
 pub fn moneyDungeon () -> WaveFunction {
     let mut wf = WaveFunction::new(vec!(
-        State::new(0, ("",          " "), &[&[0,1,2  ,4],&[0,1,2  ,4],&[0,1,  3,4],&[0,1,  3,4]]),
-        State::new(1, ("\x1b[1;31m","+"), &[&[0,    3],&[0,    3],&[0,  2  ],&[0,  2  ]]), // no ++ connections
-        State::new(2, ("\x1b[1;31m","-"), &[&[0,     ],&[0,     ],&[  1,2  ],&[  1,2  ]]),
-        State::new(3, ("\x1b[1;31m","|"), &[&[  1,   ],&[  1,   ],&[0,    3],&[0,    3]]),
-        State::new(4, ("\x1b[1;32m","$"), &[&[0,     ],&[0,     ],&[0,     ],&[0,     ]]),
+        State::new(0, ("\x1b[0;40m",   " "), &[&[0,2,4,7,8,9,15,16,17],&[0,2,4,5,6,11,14,16,17],&[0,1,3,5,7,12,14,15,16],&[0,1,3,6,8,10,14,15,17]]),
+        // |
+        State::new(1, ("\x1b[44;1;34m","|"), &[&[3,5,6,10,11,12,13,14],&[3,7,8,9,10,12,13,15],&[0],&[0]]),
+        // -
+        State::new(2, ("\x1b[44;1;34m","-"), &[&[0],&[0],&[4,6,8,9,10,11,13,17],&[4,5,7,9,11,12,13,16]]),
+        // |
+        // *
+        // |
+        State::new(3, ("\x1b[44;1;34m","+"), &[&[1],&[1],&[0],&[0]]),
+        // -*-
+        State::new(4, ("\x1b[44;1;34m","+"), &[&[0],&[0],&[2],&[2]]),
+        // *-
+        // |
+        State::new(5, ("\x1b[44;1;34m","+"), &[&[0],&[1],&[2],&[0]]),
+        // -*
+        //  |
+        State::new(6, ("\x1b[44;1;34m","+"), &[&[0],&[1],&[0],&[2]]),
+        //  |
+        //  *-
+        State::new(7, ("\x1b[44;1;34m","+"), &[&[1],&[0],&[2],&[0]]),
+        //  |
+        // -*
+        State::new(8, ("\x1b[44;1;34m","+"), &[&[1],&[0],&[0],&[2]]),
+        //  |
+        // -*-
+        State::new(9, ("\x1b[44;1;34m","+"), &[&[1],&[0],&[2],&[2]]),
+        //  |
+        // -*
+        //  |
+        State::new(10, ("\x1b[44;1;34m","+"), &[&[1],&[1],&[0],&[2]]),
+        // -*-
+        //  |
+        State::new(11, ("\x1b[44;1;34m","+"), &[&[0],&[1],&[2],&[2]]),
+        //  |
+        //  *-
+        //  |
+        State::new(12, ("\x1b[44;1;34m","+"), &[&[1],&[1],&[2],&[0]]),
+        //  |
+        // -*-
+        //  |
+        State::new(13, ("\x1b[44;1;34m","+"), &[&[1],&[1],&[2],&[2]]),
+        //  *
+        //  |
+        State::new(14, ("\x1b[44;1;34m","+"), &[&[0],&[1],&[0],&[0]]),
+        //  |
+        //  *
+        State::new(15, ("\x1b[44;1;34m","+"), &[&[1],&[0],&[0],&[0]]),
+        //  *-
+        State::new(16, ("\x1b[44;1;34m","+"), &[&[0],&[0],&[2],&[0]]),
+        //  -*
+        State::new(17, ("\x1b[44;1;34m","+"), &[&[0],&[0],&[2],&[0]]),
+
     ));
     while wf.collapseMaybe() { }
     print!("{HOM}\n");
@@ -373,12 +430,6 @@ pub fn moneyDungeon () -> WaveFunction {
     wf
 }
 
-/*
-const BLK :char = '◆';
-const BLK :char = '●';
-const BLK :char = '▮';
-*/
-const BLK :char = '◼';
 
 
 pub fn ultima () -> WaveFunction {
