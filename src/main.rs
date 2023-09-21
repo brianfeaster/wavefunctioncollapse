@@ -21,7 +21,9 @@ pub const RES: &str = "\x1b8";
 pub const CLR: &str = "\x1b[2J";
 pub const HOM: &str = "\x1b[H";
 pub const RST: &str = "\x1b[0m";
+pub const IBLK: &str = "\x1b[1;30m";
 pub const IRED: &str = "\x1b[1;31m";
+pub const IYEL: &str = "\x1b[1;33m";
 pub const FLS: &str = "\x1b[5m";
 
 pub type Res<T> = Result<T, Box<dyn Error>>;
@@ -34,6 +36,11 @@ pub fn readline() -> String {
 
 pub fn sleep (secs: f64)  {
     thread::sleep(Duration::from_millis( (secs*1000.0) as u64));
+}
+
+#[macro_export]
+macro_rules! IF {
+    ($p:expr, $t:expr, $f:expr) => (if $p { $t } else { $f })
 }
 
 
@@ -213,14 +220,14 @@ impl WaveFunction {
     fn is_superpositioned (&self, p: &Point) -> bool {
         2 <= self.ss_ref(p).count()
     }
-    fn projectdir(&mut self, (y,x): (usize, usize), op: &Point, dir: usize) {
+    fn projectdir(&mut self, (y,x): (usize, usize), op: &Point, dir: usize) -> Option<()> {
         let p = Point::new(y, x);
         self.cursor = (p.clone(), op.clone());
         let sscount = self.ss(&p).count();
-        if sscount < 2 { return } // Skip already collapsed state
+        if sscount < 2 { return Some(()) } // Skip already collapsed state
 
         // The "top row is ignored...disables y-axis torus mapping.
-        if (op.y==self.top && 0==dir) || ((op.y+1)%self.term.h==self.top && 1==dir) { return }
+        //if (op.y==self.top && 0==dir) || ((op.y+1)%self.term.h==self.top && 1==dir) { return }
 
         let hashset2 = self.ss_ref(&p).intersect(&self.projection_ss(&self.ss_ref(&op).states, dir));
         let sscountfinal = hashset2.len();
@@ -230,28 +237,31 @@ impl WaveFunction {
             self.ss(&p).states = hashset2;
             if 1 == sscountfinal {
                 self.rowcount[p.y] += 1;
-                self.plotGlyph(&p);
             }
-            //if 0 == sscountfinal { print!("\x1b[{};{}H{FLS}{IRED}!{RST}\n", p.y+1, p.x+1); readline(); }
+            self.plotGlyph(&p);
             self.groups[sscount].remove(&p);
             self.groups[sscountfinal].insert(p.clone());
-            self.projectState(&p)
+            return match sscountfinal {
+                0 => Some(()),
+                _ => self.projectState(&p)
+            }
         }
+        Some(())
     }
-    fn projectState(&mut self, p: &Point) {
+    fn projectState(&mut self, p: &Point) -> Option<()> {
         let y = p.y;
         let x = p.x;
-        self.projectdir(((y+self.term.h-1)%self.term.h, x), p, 0);
-        self.projectdir(((y+1)            %self.term.h, x), p, 1);
-        self.projectdir((y, (x+1)            %self.term.w), p, 2);
-        self.projectdir((y, (x+self.term.w-1)%self.term.w), p, 3);
+        self.projectdir(((y+self.term.h-1)%self.term.h, x), p, 0)?;
+        self.projectdir(((y+1)            %self.term.h, x), p, 1)?;
+        self.projectdir((y, (x+1)            %self.term.w), p, 2)?;
+        self.projectdir((y, (x+self.term.w-1)%self.term.w), p, 3)
     }
-    fn collapseAt(&mut self, p: &Point) {
+    fn collapseAt(&mut self, p: &Point) -> Option<()> {
         assert!(self.is_superpositioned(p)); // Should only collapse superstates
         self.rowcount[p.y] += 1;
         self.grid[p.y][p.x].collapse();
         self.plotGlyph(p);
-        self.projectState(p);
+        self.projectState(p)
     }
     fn getLowestEntropy(&mut self) -> Option<Point> {
         self.groups.iter_mut()
@@ -262,25 +272,37 @@ impl WaveFunction {
     }
     pub fn collapseMaybe(&mut self) -> bool {
         match self.getLowestEntropy() {
-            Some(p) => { self.collapseAt(&p); true}
+            Some(p) => { match self.collapseAt(&p) { Some(_) => true, None => false} }
             None => false
         }
     }
     pub fn stateAt (&self, p: &Point) -> usize {
         self.grid[p.y][p.x].state()
     }
-    pub fn glyphAt (&self, p: &Point) -> & Glyph {
+    pub fn glyphAt (&self, p: &Point) -> &Glyph {
         &self.basestates[self.stateAt(p)].glyph
     }
     pub fn plotGlyph(&mut self, p: &Point) {
-        let clr = &self.glyphAt(p).color;
-        if &self.lastColor != clr {
-            self.info += 1;
-            self.lastColor = self.glyphAt(p).color.to_string();
-            print!("{}", self.lastColor);
+        match self.ss_ref(&p).states.len() {
+        0 => {
+            self.lastColor = format!("{FLS}{IYEL}").to_string();
+            print!("\x1b[{};{}H{RST}{}!", p.y+1, p.x+1, self.lastColor);
         }
-        print!("\x1b[{};{}H{}", p.y+1, p.x+1, self.glyphAt(p).glyph);
-        //print!("\x1b[H\n"); readline();
+        1 => {
+            let clr = &self.glyphAt(p).color;
+            if &self.lastColor != clr {
+                self.info += 1;
+                self.lastColor = self.glyphAt(p).color.to_string();
+                print!("{RST}{}", self.lastColor);
+            }
+            print!("\x1b[{};{}H{}", p.y+1, p.x+1, self.glyphAt(p).glyph);
+            //print!("\x1b[H\n"); readline();
+        },
+        c => {
+            self.lastColor = format!("{IBLK}").to_string();
+            print!("\x1b[{};{}H{RST}{}{:x}", p.y+1, p.x+1, self.lastColor, c);
+        }
+        }
     }
     pub fn print (&self) -> &Self { print!("{}\x1b[0m", self); self }
     pub fn printTop (&self) -> &Self {
@@ -357,7 +379,54 @@ pub fn header () {
     println!("\x1b[35m   \\_/\\_/  |_|   \\____|\x1b[0m");
 }
 
-pub fn moneyDungeon () -> WaveFunction {
+pub fn maze () -> WaveFunction {
+    let mut wf = WaveFunction::new(vec!(
+        State::new(0, ("\x1b[1;30;40m","."), &[&[0,2,4,5,6,9],&[0,2,4,7,8,11],&[0,1,3,5,8,12],&[0,1,3,6,7,10]]),
+
+        State::new(1, ("\x1b[1;31;40m","|"), &[&[1,3,7,8,10,11,12],&[1,3,5,6,9,10,12],&[0],&[0]]),
+        State::new(2, ("\x1b[1;31;40m","-"), &[&[0],&[0],&[2,4,6,7,9,10],&[2,4,5,8,9,12]]),
+
+        // |
+        State::new(3, ("\x1b[1;31;40m","|"), &[&[1],&[1],&[0],&[0]]),
+        // -
+        State::new(4, ("\x1b[1;31;40m","-"), &[&[0],&[0],&[2],&[2]]),
+
+        // L
+        State::new(5, ("\x1b[1;31;40m","#"), &[&[1],&[0],&[2],&[0]]),
+        // _|
+        State::new(6, ("\x1b[1;31;40m","#"), &[&[1],&[0],&[0],&[2]]),
+        // 7
+        State::new(7, ("\x1b[1;31;40m","#"), &[&[0],&[1],&[0],&[2]]),
+        // |~
+        State::new(8, ("\x1b[1;31;40m","#"), &[&[0],&[1],&[2],&[0]]),
+
+        // _|_
+        State::new(9, ("\x1b[1;31;40m","-"), &[&[1],&[0],&[2],&[2]]),
+        // -|
+        State::new(10, ("\x1b[1;31;40m","|"), &[&[1],&[1],&[0],&[2]]),
+        // ^|^
+        State::new(11, ("\x1b[1;31;40m","-"), &[&[0],&[1],&[2],&[2]]),
+        //  |-
+        State::new(12, ("\x1b[1;31;40m","|"), &[&[1],&[1],&[2],&[0]]),
+
+    ));
+    while wf.collapseMaybe() { }
+    print!("{HOM}{RST}\n");
+    if !true {
+        print!("\x1b[H");
+        wf.print();
+        wf.resetrow();
+        for _ in 0..100 {
+            while wf.collapseMaybe() { }
+            print!("\x1b[H\x1bM");
+            wf.printTop();
+            wf.resetrow();
+        }
+    }
+    wf
+}
+
+pub fn maze0 () -> WaveFunction {
     let mut wf = WaveFunction::new(vec!(
         State::new(0, ("\x1b[0;40m",   " "), &[&[0,2,4,7,8,9,15,16,17],&[0,2,4,5,6,11,14,16,17],&[0,1,3,5,7,12,14,15,16],&[0,1,3,6,8,10,14,15,17]]),
         // |
@@ -413,7 +482,7 @@ pub fn moneyDungeon () -> WaveFunction {
 
     ));
     while wf.collapseMaybe() { }
-    print!("{HOM}\n");
+    print!("{HOM}{RST}\n");
     if !true {
         print!("\x1b[H");
         wf.print();
@@ -440,7 +509,7 @@ pub fn ultima () -> WaveFunction {
         State::new(5, ("\x1b[1;37m", &BLK.to_string()), &[&[4,5],  &[4,5],  &[4,5],  &[4,5]]),
     ));
     while wf.collapseMaybe() { }
-    print!("{HOM}\n");
+    print!("{HOM}{RST}\n");
     if !true {
         print!("\x1b[H");
         wf.print();
@@ -493,7 +562,7 @@ pub fn mobo () -> WaveFunction {
         State::new(12, ("\x1b[1;42;32m","+"), &[&[10],&[10],&[11],&[11]]),
     ));
     while wf.collapseMaybe() {  }
-    print!("{HOM}\n");
+    print!("{HOM}{RST}\n");
     if !true {
         wf.resetrow();
         for _ in 0..100 {
@@ -544,7 +613,7 @@ pub fn rogue () -> WaveFunction {
         State::new(12, ("\x1b[0;40;36m","#"), &[&[10],&[10],&[11],&[11]]),
     ));
     while wf.collapseMaybe() {  }
-    print!("{HOM}\n");
+    print!("{HOM}{RST}\n");
     if !true {
         for _ in 0..100 {
             wf.resetrow();
@@ -562,11 +631,12 @@ pub fn rogue () -> WaveFunction {
 
 pub fn main () {
     print!("USAGE:  wavefunctioncollapse [HEIGHT default 25] [WIDTH default 80]");
-    print!("{SAV}{HOM}");
+    print!("{SAV}{HOM}{CLR}");
     header();
     //print!("HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n", (wf.term.w+1)*wf.term.h);
     loop {
-        moneyDungeon(); sleep(3.0);
+        maze(); sleep(3.0);
+        maze0(); sleep(3.0);
         ultima(); sleep(3.0);
         mobo(); sleep(3.0);
         rogue(); sleep(3.0);
@@ -597,15 +667,6 @@ pub fn main () {
     Eigenstate/Eigenvector - Quantum state with definite value
 
     Superposition of eigenstates will have various probabilistic eigenvalues
-
-, collections::HashMap};
-   X / \    diagonals
-   < > ^ V  transitions
-   + - |    cartesianals
-  let hm = HashMap::<usize, usize>::new();
-  println!("{:?} {:?}", hm, vec![1,2,3]);
-
-  map z :w!<cr>:!rustc % && ./helloRust $(stty size)<cr>
 
 Collapse center, Superpose orthogonals
 
